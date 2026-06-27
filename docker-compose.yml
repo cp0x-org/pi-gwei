@@ -1,0 +1,13 @@
+services:
+  gwei-names:
+    build:
+      context: .
+    image: gwei-names
+    ports:
+      - "4173:4173"
+    # Runtime config (contract addresses, parent namehash, RPC URL) is mounted over the
+    # built file, so you can point the app at different contracts / RPC by editing this
+    # file and restarting the container — no image rebuild required.
+    volumes:
+      - ./public/config.json:/app/dist/config.json:ro
+    restart: unless-stopped
