@@ -49,8 +49,10 @@ export default function MainLayout() {
               display: 'flex',
               flexDirection: 'column',
               alignItems: 'center',
-              justifyContent: 'center',
-              px: 2
+              justifyContent: 'flex-start',
+              px: 2,
+              pt: { xs: 3, md: 5 },
+              pb: { xs: 4, md: 6 }
             }}
           >
             <Outlet />

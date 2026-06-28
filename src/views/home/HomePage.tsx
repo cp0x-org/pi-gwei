@@ -1,18 +1,24 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 
 // web3
 import { useAccount, usePublicClient, useWriteContract } from 'wagmi';
 import { type Abi, type Address, isAddressEqual, zeroAddress } from 'viem';
 
 // material-ui
+import Accordion from '@mui/material/Accordion';
+import AccordionDetails from '@mui/material/AccordionDetails';
+import AccordionSummary from '@mui/material/AccordionSummary';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import CircularProgress from '@mui/material/CircularProgress';
+import Divider from '@mui/material/Divider';
 import InputAdornment from '@mui/material/InputAdornment';
+import Link from '@mui/material/Link';
 import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 
 // project imports
 import subdomainsImage from 'assets/images/subdomains.png';
@@ -38,6 +44,45 @@ type RegistrarConfig = readonly [
   gateToken: Address,
   minGateBalance: bigint,
   payout: Address
+];
+
+// Static explainer content for the "About" section. Plain copy so it stays
+// readable in the contract-driven dapp and easy to translate later.
+type FaqItem = { question: string; answer: ReactNode };
+
+const FAQ_ITEMS: FaqItem[] = [
+  {
+    question: 'What is this?',
+    answer: (
+      <>
+        Ownerless <strong>.gwei</strong> names as NFTs on Ethereum — no owner, no DAO, no treasury anyone can extract. A neutral fork of{' '}
+        <Link href="https://github.com/z0r0z/wei-names" target="_blank" rel="noopener noreferrer">
+          wei-names
+        </Link>{' '}
+        with profit and admin control removed.
+      </>
+    )
+  },
+  {
+    question: 'Why does it exist?',
+    answer: (
+      <>
+        It started when ENS Labs moved to pull its ~$20M treasury and voting power back to the team — a reminder that a DAO can still be
+        captured. <code>.gwei</code> shows the alternative: provably neutral public infrastructure, not a product behind closed doors. Fees
+        are burned rather than collected, and the rules are frozen in code forever, so no one can change them, capture the value, or shut it
+        down.
+      </>
+    )
+  },
+  {
+    question: 'How much does it cost?',
+    answer: (
+      <>
+        Minting <code>&lt;yourname&gt;.cp0x.gwei</code> here is <strong>free</strong> — just connect your wallet and mine. A top-level{' '}
+        <code>.gwei</code> name costs a fixed, burned fee (0.0005 ETH for 5+ chars, more for shorter ones).
+      </>
+    )
+  }
 ];
 
 // ==============================|| HOME PAGE ||============================== //
@@ -149,7 +194,7 @@ export default function HomePage() {
   };
 
   return (
-    <Box sx={{ width: '100%', display: 'flex', justifyContent: 'center' }}>
+    <Stack spacing={{ xs: 6, md: 8 }} sx={{ width: '100%', alignItems: 'center' }}>
       <Stack spacing={2} sx={{ width: '100%', maxWidth: 480, alignItems: 'center' }}>
         <Box component="img" src={subdomainsImage} alt="subdomains" sx={{ width: '100%', height: 'auto', display: 'block' }} />
 
@@ -204,6 +249,52 @@ export default function HomePage() {
           </Alert>
         )}
       </Stack>
-    </Box>
+
+      {/* About / FAQ — explains what .gwei names are and why this exists. */}
+      <Box component="section" sx={{ width: '100%', maxWidth: 720 }}>
+        <Divider sx={{ mb: { xs: 4, md: 5 } }} />
+        <Typography color="text.secondary" sx={{ mb: 4, lineHeight: 1.7 }}>
+          <strong>.gwei</strong> is an ownerless namespace on Ethereum ({' '}
+          <Link href="https://gwei.domains" target="_blank" rel="noopener noreferrer">
+            gwei.domains
+          </Link>{' '}
+          by{' '}
+          <Link href="https://x.com/donnoh_eth" target="_blank" rel="noopener noreferrer">
+            @donnoh_eth
+          </Link>
+          ): no owner, no DAO, fees burned instead of collected, rules frozen in code. Mint a free{' '}
+          <strong>&lt;yourname&gt;.cp0x.gwei</strong> above.
+        </Typography>
+
+        {FAQ_ITEMS.map((item, index) => (
+          <Accordion
+            key={item.question}
+            disableGutters
+            defaultExpanded={index === 0}
+            sx={{ bgcolor: 'transparent', '&:before': { display: 'none' } }}
+          >
+            <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+              <Typography sx={{ fontWeight: 600 }}>{item.question}</Typography>
+            </AccordionSummary>
+            <AccordionDetails>
+              <Typography component="div" color="text.secondary" sx={{ lineHeight: 1.7 }}>
+                {item.answer}
+              </Typography>
+            </AccordionDetails>
+          </Accordion>
+        ))}
+
+        <Typography color="text.secondary" sx={{ mt: 4 }}>
+          Source &amp; diffs:{' '}
+          <Link href="https://github.com/lucadonnoh/gwei-names" target="_blank" rel="noopener noreferrer">
+            lucadonnoh/gwei-names
+          </Link>{' '}
+          ·{' '}
+          <Link href="https://github.com/cp0x-org" target="_blank" rel="noopener noreferrer">
+            cp0x-org
+          </Link>
+        </Typography>
+      </Box>
+    </Stack>
   );
 }
