@@ -44,7 +44,7 @@ The container serves the built app on port `4173`. `config.json` is mounted from
 container is enough to point the app at different contracts / RPC.
 
 ## Application Links
-- Website: [pi.cp0x.com](https://pi.cp0x.com/)
+- Website: [gwei.cp0x.com](https://gwei.cp0x.com/)
 - Twitter: [@cp0xdotcom](https://x.com/cp0xdotcom)
 - Telegram: [@cp0xdotcom](https://t.me/cp0xdotcom)
 
