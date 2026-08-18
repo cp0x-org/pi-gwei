@@ -7,6 +7,10 @@ import useConfig from 'hooks/useConfig';
 // types
 import { I18n } from 'types/config';
 
+// English is the base locale: it is merged under every other locale so a key that has
+// not been translated yet falls back to its English text instead of showing the key id.
+import enMessages from 'utils/locales/en.json';
+
 // load locales files
 function loadLocaleData(i18n: I18n) {
   switch (i18n) {
@@ -33,8 +37,13 @@ export default function Locales({ children }: LocalsProps) {
 
   useEffect(() => {
     loadLocaleData(i18n).then((d: { default: Record<string, string> | Record<string, MessageFormatElement[]> | undefined }) => {
-      setMessages(d.default);
+      setMessages({ ...(enMessages as Record<string, string>), ...(d.default as Record<string, string>) });
     });
+  }, [i18n]);
+
+  // Keep the document language in sync so assistive tech announces the page correctly.
+  useEffect(() => {
+    document.documentElement.lang = i18n;
   }, [i18n]);
 
   return (

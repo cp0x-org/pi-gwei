@@ -1,4 +1,5 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useState, type ComponentProps, type FormEvent, type ReactNode } from 'react';
+import { FormattedMessage, useIntl } from 'react-intl';
 
 // web3
 import { useAccount, usePublicClient, useWriteContract } from 'wagmi';
@@ -29,11 +30,26 @@ import subdomainRegistrarAbi from '@/abi/SubdomainRegistrar.json';
 const NAME_NFT_ABI = nameNFTAbi as unknown as Abi;
 const SUBDOMAIN_REGISTRAR_ABI = subdomainRegistrarAbi as unknown as Abi;
 
+// A status is stored as a translation id (formatted at render time, so it follows the
+// language switcher) or as raw text when it comes from outside the app — viem error
+// messages are produced by the library and have no translation of ours.
+type StatusMessage = { id: string; values?: Record<string, string> } | { text: string };
+
 type Status =
   | { kind: 'idle' }
-  | { kind: 'working'; message: string }
-  | { kind: 'error'; message: string }
-  | { kind: 'success'; message: string; txHash: `0x${string}` };
+  | { kind: 'working'; message: StatusMessage }
+  // `field: 'name'` marks errors caused by what was typed in the name input, so the
+  // input can be flagged with aria-invalid instead of every unrelated failure.
+  | { kind: 'error'; message: StatusMessage; field?: 'name' }
+  | { kind: 'success'; message: StatusMessage; txHash: `0x${string}` };
+
+// Ids used to wire controls to their status/description in the accessibility tree.
+const NAME_INPUT_ID = 'mint-name-input';
+const MINT_STATUS_ID = 'mint-status';
+const ABOUT_HEADING_ID = 'about-gwei-heading';
+
+/** 0x1234…abcd — used in accessible names so each transaction link is distinguishable. */
+const shortenHash = (hash: string) => `${hash.slice(0, 6)}…${hash.slice(-4)}`;
 
 // Registrar.config(parentId) tuple shape
 type RegistrarConfig = readonly [
@@ -46,42 +62,34 @@ type RegistrarConfig = readonly [
   payout: Address
 ];
 
-// Static explainer content for the "About" section. Plain copy so it stays
-// readable in the contract-driven dapp and easy to translate later.
-type FaqItem = { question: string; answer: ReactNode };
+// Example name used by the explainer copy. A literal (not the runtime parent name),
+// exactly as it was written in the original copy.
+const EXAMPLE_NAME = '<yourname>.cp0x.gwei';
+
+const bold = (chunks: ReactNode[]) => <strong>{chunks}</strong>;
+const code = (chunks: ReactNode[]) => <code>{chunks}</code>;
+const externalLink = (href: string) => (chunks: ReactNode[]) => (
+  <Link href={href} target="_blank" rel="noopener noreferrer">
+    {chunks}
+  </Link>
+);
+
+// The "About" section. The copy lives in the locale files (`home.faq.*`); only the
+// rich-text tags used by each message stay here.
+type FaqItem = { key: string; values: ComponentProps<typeof FormattedMessage>['values'] };
 
 const FAQ_ITEMS: FaqItem[] = [
   {
-    question: 'What is this?',
-    answer: (
-      <>
-        Ownerless <strong>.gwei</strong> names as NFTs on Ethereum — no owner, no DAO, no treasury anyone can extract. A neutral fork of{' '}
-        <Link href="https://github.com/z0r0z/wei-names" target="_blank" rel="noopener noreferrer">
-          wei-names
-        </Link>{' '}
-        with profit and admin control removed.
-      </>
-    )
+    key: 'what',
+    values: { b: bold, a: externalLink('https://github.com/z0r0z/wei-names') }
   },
   {
-    question: 'Why does it exist?',
-    answer: (
-      <>
-        It started when ENS Labs moved to pull its ~$20M treasury and voting power back to the team — a reminder that a DAO can still be
-        captured. <code>.gwei</code> shows the alternative: provably neutral public infrastructure, not a product behind closed doors. Fees
-        are burned rather than collected, and the rules are frozen in code forever, so no one can change them, capture the value, or shut it
-        down.
-      </>
-    )
+    key: 'why',
+    values: { code }
   },
   {
-    question: 'How much does it cost?',
-    answer: (
-      <>
-        Minting <code>&lt;yourname&gt;.cp0x.gwei</code> here is <strong>free</strong> — just connect your wallet and mine. A top-level{' '}
-        <code>.gwei</code> name costs a fixed, burned fee (0.0005 ETH for 5+ chars, more for shorter ones).
-      </>
-    )
+    key: 'cost',
+    values: { b: bold, code, example: EXAMPLE_NAME }
   }
 ];
 
@@ -91,6 +99,7 @@ export default function HomePage() {
   const [value, setValue] = useState('');
   const [status, setStatus] = useState<Status>({ kind: 'idle' });
 
+  const intl = useIntl();
   const appConfig = getAppConfig();
   const { address, isConnected } = useAccount();
   const publicClient = usePublicClient();
@@ -117,22 +126,24 @@ export default function HomePage() {
   const handleSubmit = async () => {
     const label = normalizeLabel(value);
 
+    const fullName = `${label}.${appConfig.parentName}`;
+
     if (!label) {
-      setStatus({ kind: 'error', message: 'Enter a name to mine.' });
+      setStatus({ kind: 'error', message: { id: 'home.status.enter-name' }, field: 'name' });
       return;
     }
     if (!isConnected || !address) {
-      setStatus({ kind: 'error', message: 'Connect your wallet first.' });
+      setStatus({ kind: 'error', message: { id: 'home.status.connect-wallet' } });
       return;
     }
     if (!publicClient) {
-      setStatus({ kind: 'error', message: 'RPC client is not ready. Try again in a moment.' });
+      setStatus({ kind: 'error', message: { id: 'home.status.rpc-not-ready' } });
       return;
     }
 
     try {
       // 1) Check availability on NameNFT: isAvailable(label, parentId)
-      setStatus({ kind: 'working', message: `Checking availability of ${label}.${appConfig.parentName}…` });
+      setStatus({ kind: 'working', message: { id: 'home.status.checking', values: { name: fullName } } });
       const available = (await publicClient.readContract({
         address: appConfig.nameNFTAddress,
         abi: NAME_NFT_ABI,
@@ -141,7 +152,7 @@ export default function HomePage() {
       })) as boolean;
 
       if (!available) {
-        setStatus({ kind: 'error', message: `${label}.${appConfig.parentName} is not available.` });
+        setStatus({ kind: 'error', message: { id: 'home.status.not-available', values: { name: fullName } }, field: 'name' });
         return;
       }
 
@@ -155,13 +166,13 @@ export default function HomePage() {
 
       const [, enabled, feeToken, price] = registrarConfig;
       if (!enabled) {
-        setStatus({ kind: 'error', message: 'Registration is not enabled for this parent.' });
+        setStatus({ kind: 'error', message: { id: 'home.status.registration-disabled' } });
         return;
       }
       const feeValue = isAddressEqual(feeToken, zeroAddress) ? price : 0n;
 
       // 3) Register the subdomain: register(parentId, label)
-      setStatus({ kind: 'working', message: `Submitting transaction to mint ${label}.${appConfig.parentName}…` });
+      setStatus({ kind: 'working', message: { id: 'home.status.submitting', values: { name: fullName } } });
       const txHash = await writeContractAsync({
         address: appConfig.subdomainRegistrarAddress,
         abi: SUBDOMAIN_REGISTRAR_ABI,
@@ -170,43 +181,72 @@ export default function HomePage() {
         value: feeValue
       });
 
-      setStatus({ kind: 'working', message: 'Waiting for confirmation…' });
+      setStatus({ kind: 'working', message: { id: 'home.status.waiting' } });
       const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
 
       if (receipt.status === 'success') {
         setStatus({
           kind: 'success',
-          message: `${label}.${appConfig.parentName} minted!`,
+          message: { id: 'home.status.minted', values: { name: fullName } },
           txHash
         });
         setValue('');
       } else {
-        setStatus({ kind: 'error', message: 'Transaction reverted.' });
+        setStatus({ kind: 'error', message: { id: 'home.status.reverted' } });
       }
     } catch (err) {
-      const message =
+      const message: StatusMessage =
         err instanceof Error
           ? // viem errors expose a concise `shortMessage`
-            ((err as { shortMessage?: string }).shortMessage ?? err.message)
-          : 'Something went wrong.';
+            { text: (err as { shortMessage?: string }).shortMessage ?? err.message }
+          : { id: 'home.status.unknown-error' };
       setStatus({ kind: 'error', message });
     }
   };
 
+  // Native form submission keeps Enter-in-the-input and the submit button on the
+  // same code path (previously an onKeyDown handler duplicated the click handler).
+  const handleFormSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    void handleSubmit();
+  };
+
+  // The rendered status is the single description shared by the input and the submit
+  // button, so both expose the current mint state (working / error / success).
+  const statusDescribedBy = status.kind === 'idle' ? undefined : MINT_STATUS_ID;
+
+  const formatStatus = (message: StatusMessage) =>
+    'text' in message ? message.text : intl.formatMessage({ id: message.id }, message.values);
+
   return (
     <Stack spacing={{ xs: 6, md: 8 }} sx={{ width: '100%', alignItems: 'center' }}>
-      <Stack spacing={2} sx={{ width: '100%', maxWidth: 480, alignItems: 'center' }}>
-        <Box component="img" src={subdomainsImage} alt="subdomains" sx={{ width: '100%', height: 'auto', display: 'block' }} />
+      <Stack
+        component="form"
+        onSubmit={handleFormSubmit}
+        aria-label={intl.formatMessage({ id: 'home.form.label' }, { parent: appConfig.parentName })}
+        aria-busy={working}
+        spacing={2}
+        sx={{ width: '100%', maxWidth: 480, alignItems: 'center' }}
+      >
+        <Box sx={{ width: '100%' }}>
+          <Box component="h1" className="visually-hidden">
+            <FormattedMessage id="home.heading" values={{ parent: appConfig.parentName }} />
+          </Box>
+          <Box
+            component="img"
+            src={subdomainsImage}
+            alt={intl.formatMessage({ id: 'home.image.alt' }, { parent: appConfig.parentName })}
+            sx={{ width: '100%', height: 'auto', display: 'block' }}
+          />
+        </Box>
 
         <TextField
           fullWidth
+          id={NAME_INPUT_ID}
           value={value}
           onChange={(e) => setValue(e.target.value)}
-          placeholder="yourname"
+          placeholder={intl.formatMessage({ id: 'home.input.placeholder' })}
           disabled={working}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') handleSubmit();
-          }}
           slotProps={{
             input: {
               endAdornment: (
@@ -216,83 +256,99 @@ export default function HomePage() {
                   </Typography>
                 </InputAdornment>
               )
+            },
+            htmlInput: {
+              'aria-label': intl.formatMessage({ id: 'home.input.label' }, { parent: appConfig.parentName }),
+              'aria-describedby': statusDescribedBy,
+              'aria-invalid': status.kind === 'error' && status.field === 'name' ? true : undefined
             }
           }}
         />
 
         <Button
           fullWidth
+          type="submit"
           variant="contained"
-          onClick={handleSubmit}
           disabled={working}
-          startIcon={working ? <CircularProgress size={18} color="inherit" /> : undefined}
+          aria-describedby={statusDescribedBy}
+          startIcon={working ? <CircularProgress size={18} color="inherit" aria-hidden="true" /> : undefined}
         >
-          {working ? 'Working…' : 'Mine subdomain'}
+          <FormattedMessage id={working ? 'home.submit.working' : 'home.submit'} />
         </Button>
 
         {status.kind === 'working' && (
-          <Alert severity="info" sx={{ width: '100%' }}>
-            {status.message}
+          <Alert id={MINT_STATUS_ID} role="status" severity="info" sx={{ width: '100%' }}>
+            {formatStatus(status.message)}
           </Alert>
         )}
         {status.kind === 'error' && (
-          <Alert severity="error" sx={{ width: '100%' }}>
-            {status.message}
+          <Alert id={MINT_STATUS_ID} role="alert" severity="error" sx={{ width: '100%' }}>
+            {formatStatus(status.message)}
           </Alert>
         )}
         {status.kind === 'success' && (
-          <Alert severity="success" sx={{ width: '100%' }}>
-            {status.message}{' '}
-            <a href={`https://etherscan.io/tx/${status.txHash}`} target="_blank" rel="noopener noreferrer">
-              View transaction
+          <Alert id={MINT_STATUS_ID} role="status" severity="success" sx={{ width: '100%' }}>
+            {formatStatus(status.message)}{' '}
+            <a
+              href={`https://etherscan.io/tx/${status.txHash}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={intl.formatMessage({ id: 'home.tx.view.label' }, { hash: shortenHash(status.txHash) })}
+            >
+              <FormattedMessage id="home.tx.view" />
             </a>
           </Alert>
         )}
       </Stack>
 
       {/* About / FAQ — explains what .gwei names are and why this exists. */}
-      <Box component="section" sx={{ width: '100%', maxWidth: 720 }}>
+      <Box component="section" aria-labelledby={ABOUT_HEADING_ID} sx={{ width: '100%', maxWidth: 720 }}>
+        <Box component="h2" id={ABOUT_HEADING_ID} className="visually-hidden">
+          <FormattedMessage id="home.about.heading" />
+        </Box>
         <Divider sx={{ mb: { xs: 4, md: 5 } }} />
         <Typography color="text.secondary" sx={{ mb: 4, lineHeight: 1.7 }}>
-          <strong>.gwei</strong> is an ownerless namespace on Ethereum ({' '}
-          <Link href="https://gwei.domains" target="_blank" rel="noopener noreferrer">
-            gwei.domains
-          </Link>{' '}
-          by{' '}
-          <Link href="https://x.com/donnoh_eth" target="_blank" rel="noopener noreferrer">
-            @donnoh_eth
-          </Link>
-          ): no owner, no DAO, fees burned instead of collected, rules frozen in code. Mint a free{' '}
-          <strong>&lt;yourname&gt;.cp0x.gwei</strong> above.
+          <FormattedMessage
+            id="home.about.intro"
+            values={{
+              b: bold,
+              a1: externalLink('https://gwei.domains'),
+              a2: externalLink('https://x.com/donnoh_eth'),
+              example: EXAMPLE_NAME
+            }}
+          />
         </Typography>
 
         {FAQ_ITEMS.map((item, index) => (
           <Accordion
-            key={item.question}
+            key={item.key}
             disableGutters
             defaultExpanded={index === 0}
             sx={{ bgcolor: 'transparent', '&:before': { display: 'none' } }}
           >
-            <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-              <Typography sx={{ fontWeight: 600 }}>{item.question}</Typography>
+            {/* The ids let MUI wire the panel to its trigger (aria-controls / aria-labelledby),
+                so the answer is exposed as a region named after its question. */}
+            <AccordionSummary id={`faq-${index}-header`} aria-controls={`faq-${index}-content`} expandIcon={<ExpandMoreIcon />}>
+              <Typography sx={{ fontWeight: 600 }}>
+                <FormattedMessage id={`home.faq.${item.key}.question`} />
+              </Typography>
             </AccordionSummary>
             <AccordionDetails>
               <Typography component="div" color="text.secondary" sx={{ lineHeight: 1.7 }}>
-                {item.answer}
+                <FormattedMessage id={`home.faq.${item.key}.answer`} values={item.values} />
               </Typography>
             </AccordionDetails>
           </Accordion>
         ))}
 
         <Typography color="text.secondary" sx={{ mt: 4 }}>
-          Source &amp; diffs:{' '}
-          <Link href="https://github.com/lucadonnoh/gwei-names" target="_blank" rel="noopener noreferrer">
-            lucadonnoh/gwei-names
-          </Link>{' '}
-          ·{' '}
-          <Link href="https://github.com/cp0x-org" target="_blank" rel="noopener noreferrer">
-            cp0x-org
-          </Link>
+          <FormattedMessage
+            id="home.source"
+            values={{
+              a1: externalLink('https://github.com/lucadonnoh/gwei-names'),
+              a2: externalLink('https://github.com/cp0x-org')
+            }}
+          />
         </Typography>
       </Box>
     </Stack>

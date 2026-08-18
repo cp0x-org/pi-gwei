@@ -1,5 +1,7 @@
 # Gwei Names by cp0x
 
+Languages: [English](./README.md) | [中文](./README_CH.md)
+
 An open-source, permissionless interface for mining `.gwei` subdomains (e.g. `yourname.cp0x.gwei`)
 via the NameNFT and SubdomainRegistrar contracts.
 

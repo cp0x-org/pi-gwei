@@ -19,8 +19,11 @@ interface ConnectButtonCustomProps {
   label?: string;
 }
 
-const ConnectButtonCustom = ({ 
-  showBalance = false, 
+// Note: keep `label` as the literal 'Connect Wallet'. RainbowKit treats that exact
+// value as "not overridden" and renders its own translation for the active locale
+// (see RainbowKitThemeProvider); replacing it here would disable that translation.
+const ConnectButtonCustom = ({
+  showBalance = false,
   chainStatus = 'icon',
   accountStatus = 'full',
   label = 'Connect Wallet'
